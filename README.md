@@ -148,14 +148,36 @@ methods = GET, PUT, POST, HEAD, DELETE
 origins = app://obsidian.md, capacitor://localhost, http://localhost
 ```
 
+## Installing
+
+### Desktop
+
+`npm run deploy` builds and copies `main.js` and `manifest.json` into the vault.
+It defaults to `/Volumes/knowledge-base`; override the target with
+`SIMPLE_SYNC_VAULT_PLUGIN_DIR` to deploy to a test vault instead.
+
+### iOS and Android, through BRAT
+
+The plugin is not in the community catalogue, and a phone has no filesystem to
+copy a build into. [BRAT](https://github.com/TfTHacker/obsidian42-brat) installs
+and updates plugins straight from GitHub releases, which is the only practical
+route on mobile.
+
+1. In Obsidian on the phone: **Settings → Community plugins → Browse**, install
+   **BRAT**, enable it.
+2. **Settings → BRAT → Add beta plugin**, paste
+   `https://github.com/asiryk/obsidian-simple-sync`, keep "latest version", add.
+3. Enable **Simple Sync** under Community plugins.
+
+BRAT then updates the plugin whenever a new release is tagged. Mobile Obsidian
+uses the `capacitor://localhost` origin, so the CORS list above must include it
+or every request fails before it reaches CouchDB.
+
 ## Setting up
 
-1. Install: `npm run deploy` builds and copies `main.js` and `manifest.json`
-   into the vault. It defaults to `/Volumes/knowledge-base`; override the target
-   with `SIMPLE_SYNC_VAULT_PLUGIN_DIR` to deploy to a test vault instead.
-2. Fill in server URL, username, password, database. Press **Test connection**.
-3. On the first device choose **Push**. Read the dry-run report, then apply.
-4. On the next device, use **Show setup QR** from the first one. Scan it with the
+1. Fill in server URL, username, password, database. Press **Test connection**.
+2. On the first device choose **Push**. Read the dry-run report, then apply.
+3. On the next device, use **Show setup QR** from the first one. Scan it with the
    phone's camera — iOS hands the `obsidian://` link to Obsidian, so no scanner
    is needed in the plugin. Then initialize with **Pull** in an empty vault.
 
@@ -173,6 +195,25 @@ npm run check      # typecheck + lint + tests
 
 TypeScript 7 for typechecking (esbuild does the transpiling), Biome for lint and
 format, Vitest for tests.
+
+### Releasing
+
+BRAT reads `manifest.json` from the release assets and compares its version to
+the tag, so the two must agree. `npm version` keeps them in step:
+
+```
+npm version patch    # or minor / major
+git push --follow-tags
+```
+
+`npm version` runs `version-bump.mjs`, which writes the new version into
+`manifest.json` and records it in `versions.json`, then stages both. Tags carry
+no `v` prefix (`.npmrc` sets `tag-version-prefix=""`).
+
+Pushing the tag runs `.github/workflows/release.yml`: it checks, builds, refuses
+to continue if the tag and `manifest.json` disagree, and publishes a release with
+`main.js` and `manifest.json` attached. `main.js` is a build artifact and stays
+out of git; only the release carries it.
 
 ### Tests
 

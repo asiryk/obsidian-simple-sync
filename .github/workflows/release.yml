@@ -1,0 +1,50 @@
+name: Release Obsidian Plugin
+
+on:
+    push:
+        tags:
+            - "*"
+
+permissions:
+    contents: write
+
+jobs:
+    release:
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Use Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 22.x
+                  cache: "npm"
+
+            - run: npm ci
+            - run: npm run check
+            - run: npm run build
+
+            # BRAT reads manifest.json from the release assets and compares its
+            # version to the tag. A mismatch makes the plugin uninstallable.
+            - name: Verify tag matches manifest version
+              run: |
+                  MANIFEST_VERSION=$(node -p "require('./manifest.json').version")
+                  if [ "$MANIFEST_VERSION" != "$GITHUB_TAG" ]; then
+                    echo "Tag $GITHUB_TAG does not match manifest.json version $MANIFEST_VERSION" >&2
+                    exit 1
+                  fi
+              env:
+                  GITHUB_TAG: ${{ github.ref_name }}
+
+            - name: Create Release
+              run: |
+                  ASSETS="main.js manifest.json"
+                  [ -f styles.css ] && ASSETS="$ASSETS styles.css"
+                  gh release create "$GITHUB_TAG" \
+                    --title "$GITHUB_TAG" \
+                    --generate-notes \
+                    $ASSETS
+              env:
+                  GITHUB_TAG: ${{ github.ref_name }}
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
