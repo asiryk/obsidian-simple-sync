@@ -67,6 +67,87 @@ chttpd/max_http_request_size   4294967296
 from `http://` can drop the auth header, and the plugin refuses `http://` for
 that reason.
 
+Docker compose service example with Traefik.
+
+`compose.yml`
+
+```yaml
+  obsidian:
+    image: couchdb:3
+    container_name: obsidian
+    restart: unless-stopped
+    environment:
+      - COUCHDB_USER=${COUCHDB_USER}
+      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD}
+    entrypoint: ["/entrypoint.sh"]
+    volumes:
+      - obsidian_data:/opt/couchdb/data
+      - ./obsidian/local.ini:/opt/couchdb/etc/local.d/local.ini:ro
+      - ./obsidian/entrypoint.sh:/entrypoint.sh:ro
+    networks:
+      - default
+    labels:
+      traefik.enable: true
+      traefik.http.routers.obsidian.rule: Host(`host.example.com`)
+      traefik.http.routers.obsidian.entrypoints: websecure
+      traefik.http.routers.obsidian.tls.certresolver: cloudflare
+      traefik.http.services.obsidian.loadbalancer.server.port: 5984
+      traefik.http.routers.obsidian.middlewares: obsidian-cors
+      traefik.http.middlewares.obsidian-cors.headers.accesscontrolallowmethods: "GET,PUT,POST,HEAD,DELETE"
+      traefik.http.middlewares.obsidian-cors.headers.accesscontrolallowheaders: "accept,authorization,content-type,origin,referer"
+      traefik.http.middlewares.obsidian-cors.headers.accesscontrolalloworiginlist: "app://obsidian.md,capacitor://localhost,http://localhost"
+      traefik.http.middlewares.obsidian-cors.headers.accesscontrolmaxage: 3600
+      traefik.http.middlewares.obsidian-cors.headers.accesscontrolallowcredentials: true
+      traefik.http.middlewares.obsidian-cors.headers.addvaryheader: true
+      traefik.docker.network: example_default
+```
+
+`./obsidian/entrypoint.sh`
+
+```bash
+#!/bin/bash
+# Write admin credentials to docker.ini so local.ini can stay read-only and secret-free
+if [ -n "$COUCHDB_USER" ] && [ -n "$COUCHDB_PASSWORD" ]; then
+  printf '[admins]\n%s = %s\n' "$COUCHDB_USER" "$COUCHDB_PASSWORD" > /opt/couchdb/etc/local.d/docker.ini
+fi
+# Skip the default entrypoint's chown/chmod (fails on read-only mounts)
+# and start CouchDB directly as couchdb user
+chown -f couchdb:couchdb /opt/couchdb/etc/local.d/docker.ini
+exec setpriv --reuid=couchdb --regid=couchdb --clear-groups /opt/couchdb/bin/couchdb
+```
+
+`./obsidian/local.ini`
+
+```ini
+[couchdb]
+single_node = true
+max_document_size = 50000000
+
+[cluster]
+n = 1
+
+[chttpd]
+require_valid_user = true
+max_http_request_size = 4294967296
+enable_cors = true
+bind_address = 0.0.0.0
+
+[chttpd_auth]
+require_valid_user = true
+authentication_redirect = /_utils/session.html
+
+[httpd]
+WWW-Authenticate = Basic realm="couchdb"
+bind_address = 0.0.0.0
+enable_cors = true
+
+[cors]
+credentials = true
+headers = accept, authorization, content-type, origin, referer
+methods = GET, PUT, POST, HEAD, DELETE
+origins = app://obsidian.md, capacitor://localhost, http://localhost
+```
+
 ## Setting up
 
 1. Install: `npm run deploy` builds and copies `main.js` and `manifest.json`
