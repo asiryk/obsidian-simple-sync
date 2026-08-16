@@ -1,0 +1,41 @@
+{
+    "name": "obsidian-simple-sync",
+    "version": "0.1.0",
+    "description": "Minimal Obsidian vault sync against CouchDB.",
+    "private": true,
+    "scripts": {
+        "build": "node esbuild.config.mjs production",
+        "dev": "node esbuild.config.mjs",
+        "typecheck": "tsc --noEmit",
+        "lint": "biome check src test",
+        "format": "biome check --write src test",
+        "check": "npm run typecheck && npm run lint && npm run test",
+        "test": "vitest run --exclude \"**/integration.test.ts\"",
+        "test:watch": "vitest",
+        "test:live": "vitest run test/integration.test.ts"
+    },
+    "dependencies": {
+        "events": "^3.3.0",
+        "minimatch": "^10.2.6",
+        "pouchdb-adapter-http": "^9.0.0",
+        "pouchdb-adapter-indexeddb": "^9.0.0",
+        "pouchdb-core": "^9.0.0",
+        "pouchdb-mapreduce": "^9.0.0",
+        "pouchdb-replication": "^9.0.0",
+        "qrcode-generator": "^2.0.4"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "^2.5.8",
+        "@types/node": "^26.2.0",
+        "@types/pouchdb-adapter-http": "^6.1.6",
+        "@types/pouchdb-adapter-idb": "^6.1.7",
+        "@types/pouchdb-core": "^7.0.15",
+        "@types/pouchdb-mapreduce": "^6.1.10",
+        "@types/pouchdb-replication": "^6.4.7",
+        "esbuild": "^0.25.0",
+        "obsidian": "^1.13.1",
+        "pouchdb-adapter-memory": "^9.0.0",
+        "typescript": "^7.0.2",
+        "vitest": "^4.1.10"
+    }
+}

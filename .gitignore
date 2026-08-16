@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output. The bundle is a release artifact, not source: build it with
+# `npm run build` and attach it to a release rather than committing it.
+main.js
+main.js.map
+*.tsbuildinfo
+
+# Test and tooling caches
+coverage/
+.vitest/
+.eslintcache
+
+# Local environment. Never commit CouchDB credentials.
+.env
+.env.*
+!.env.example
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
