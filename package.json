@@ -5,6 +5,7 @@
     "private": true,
     "scripts": {
         "build": "node esbuild.config.mjs production",
+        "deploy": "npm run build && node deploy.mjs",
         "dev": "node esbuild.config.mjs",
         "typecheck": "tsc --noEmit",
         "lint": "biome check src test",

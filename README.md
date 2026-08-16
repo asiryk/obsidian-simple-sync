@@ -69,8 +69,9 @@ that reason.
 
 ## Setting up
 
-1. Install: run `npm run build`, then copy `main.js` and `manifest.json` into
-   `<vault>/.obsidian/plugins/simple-sync/`.
+1. Install: `npm run deploy` builds and copies `main.js` and `manifest.json`
+   into the vault. It defaults to `/Volumes/knowledge-base`; override the target
+   with `SIMPLE_SYNC_VAULT_PLUGIN_DIR` to deploy to a test vault instead.
 2. Fill in server URL, username, password, database. Press **Test connection**.
 3. On the first device choose **Push**. Read the dry-run report, then apply.
 4. On the next device, use **Show setup QR** from the first one. Scan it with the
@@ -85,6 +86,7 @@ The QR contains the server password unencrypted. Do not screenshot it.
 npm install
 npm run dev        # watch build
 npm run build      # production bundle
+npm run deploy     # build, then copy into the vault
 npm run check      # typecheck + lint + tests
 ```
 
