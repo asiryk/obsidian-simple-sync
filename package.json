@@ -7,6 +7,7 @@
         "build": "node esbuild.config.mjs production",
         "deploy": "npm run build && node deploy.mjs",
         "dev": "node esbuild.config.mjs",
+        "preversion": "node preversion.mjs",
         "version": "node version-bump.mjs && git add manifest.json versions.json",
         "typecheck": "tsc --noEmit",
         "lint": "biome check src test",

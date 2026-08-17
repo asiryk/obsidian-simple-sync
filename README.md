@@ -206,9 +206,11 @@ npm version patch    # or minor / major
 git push --follow-tags
 ```
 
-`npm version` runs `version-bump.mjs`, which writes the new version into
-`manifest.json` and records it in `versions.json`, then stages both. Tags carry
-no `v` prefix (`.npmrc` sets `tag-version-prefix=""`).
+`npm version` first runs `preversion.mjs`, which fetches tags and refuses a
+version that is already tagged here or on the server — it runs before anything is
+rewritten, so a rejected bump leaves nothing to clean up. Then `version-bump.mjs`
+writes the new version into `manifest.json` and records it in `versions.json`,
+and stages both. Tags carry no `v` prefix (`.npmrc` sets `tag-version-prefix=""`).
 
 Pushing the tag runs `.github/workflows/release.yml`: it checks, builds, refuses
 to continue if the tag and `manifest.json` disagree, and publishes a release with

@@ -57,7 +57,7 @@ The bundle runs in Obsidian on desktop **and iOS**. `crypto.subtle` and `TextEnc
 
 `events` in `dependencies` looks unused and is not: `pouchdb-core`, `pouchdb-replication` and `pouchdb-utils` require it for `EventEmitter`, which is what makes the replication handle and the changes feed emit at all. `platform: "browser"` means esbuild does not polyfill Node builtins, so the bare `events` specifier has to resolve from `node_modules`. Removing it fails the build. Same category as `shim.mjs` — do not prune either on the evidence of a grep over `src/`.
 
-`main.js` is a build artifact, gitignored, shipped only as a release asset. Releases are driven by `npm version` (which syncs `manifest.json` and `versions.json`) plus `git push --follow-tags`; the workflow refuses to publish when the tag and manifest disagree.
+`main.js` is a build artifact, gitignored, shipped only as a release asset. Releases are driven by `npm version` (`preversion.mjs` rejects an already-tagged version, `version-bump.mjs` syncs `manifest.json` and `versions.json`) plus `git push --follow-tags`; the workflow refuses to publish when the tag and manifest disagree. Anything about a release that can fail belongs in `preversion.mjs`, which runs before any file is rewritten.
 
 ## Conventions
 
