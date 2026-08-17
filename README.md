@@ -183,6 +183,14 @@ or every request fails before it reaches CouchDB.
 
 The QR contains the server password unencrypted. Do not screenshot it.
 
+The password itself is kept in Obsidian's secret storage (`app.secretStorage`),
+which encrypts it with the system keychain, and is left out of the plugin's
+`data.json` entirely. A password left in `data.json` by an earlier version is
+moved across on the next load. `minAppVersion` is 1.11.4 for this reason: that is
+the release the API landed in. A platform with no secure backend underneath it
+still falls back to `data.json`, because the alternative is not keeping the
+password at all.
+
 ## Development
 
 ```

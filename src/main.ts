@@ -17,6 +17,7 @@ import {
     verifyIdentity,
     writeMeta,
 } from "./safety";
+import { readPassword, writePassword } from "./secrets";
 import { SimpleSyncSettingTab } from "./settings";
 import { decodeSetup, SETUP_ACTION } from "./setupQR";
 import { SyncState } from "./state";
@@ -97,11 +98,23 @@ export default class SimpleSyncPlugin extends Plugin {
     // ---------------------------------------------------------------- settings
 
     async loadSettings(): Promise<void> {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        const data = (await this.loadData()) as Partial<SyncSettings> | null;
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+        const stored = readPassword(this.app);
+        if (stored !== null) this.settings.password = stored;
+        // An install from before this moved the password into secret storage
+        // left it in data.json. Rewriting it now takes it out of there.
+        // TODO: drop this line and the `data` binding one release after this
+        // one. Every device will have loaded this version by then, so no
+        // data.json still holds a password and readPassword is the only source.
+        if (data?.password) await this.saveSettings();
     }
 
+    /** Keeps the password out of `data.json` whenever secret storage will take it. */
     async saveSettings(): Promise<void> {
-        await this.saveData(this.settings);
+        const stored = writePassword(this.app, this.settings.password);
+        const { password, ...withoutPassword } = this.settings;
+        await this.saveData(stored ? withoutPassword : this.settings);
     }
 
     reloadIgnore(): void {
@@ -180,6 +193,11 @@ export default class SimpleSyncPlugin extends Plugin {
         }
         try {
             await this.openLocalDb();
+            // Secret storage fills in during app startup, which can be after
+            // onload; re-read it here so the first connection is not made with
+            // an empty password.
+            const stored = readPassword(this.app);
+            if (stored !== null) this.settings.password = stored;
             this.remote = openRemote(this.settings);
 
             const verdict = await verifyIdentity(this.remote, this.settings);

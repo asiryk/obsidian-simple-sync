@@ -51,6 +51,10 @@ Conflicts never open a dialog. The loser is written beside the winner as `<name>
 
 Guard C's dry-run modal is the plugin's only modal. Errors go through `Notice`; everything else goes to the status bar or the debug log.
 
+### Secrets
+
+`secrets.ts` keeps the server password in `app.secretStorage`, which is encrypted by the system keychain. `minAppVersion` is 1.11.4 solely because that is the release the API landed in — lower it and the plugin loses the password on older clients. Availability of the API is not availability of a backend: `setSecret` throws on a platform without one, and `writePassword` returning false is what makes `saveSettings` fall back to writing the password into `data.json`. Never let a failure there drop the password silently. The in-memory `settings.password` stays the working value that `db.ts` and the QR use, and `startIfReady` re-reads secret storage because it may still have been loading when `onload` ran.
+
 ### Build and environment constraints
 
 The bundle runs in Obsidian on desktop **and iOS**. `crypto.subtle` and `TextEncoder` are available; Node APIs are not. PouchDB is assembled from `pouchdb-core` plus explicit adapters in `db.ts` (never the `pouchdb` meta-package) and needs `src/shim.mjs`, injected by esbuild, to survive its CommonJS assumptions. `obsidian`, `electron`, `@codemirror/*` and `@lezer/*` are externals.

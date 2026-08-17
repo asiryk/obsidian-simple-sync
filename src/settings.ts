@@ -34,13 +34,16 @@ export class SimpleSyncSettingTab extends PluginSettingTab {
             }),
         );
 
-        new Setting(containerEl).setName("Password").addText((text) => {
-            text.inputEl.type = "password";
-            text.setValue(settings.password).onChange(async (value) => {
-                settings.password = value;
-                await this.plugin.saveSettings();
+        new Setting(containerEl)
+            .setName("Password")
+            .setDesc("Held in Obsidian's secret storage, encrypted by the system keychain.")
+            .addText((text) => {
+                text.inputEl.type = "password";
+                text.setValue(settings.password).onChange(async (value) => {
+                    settings.password = value;
+                    await this.plugin.saveSettings();
+                });
             });
-        });
 
         new Setting(containerEl).setName("Database").addText((text) =>
             text
