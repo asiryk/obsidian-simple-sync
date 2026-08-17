@@ -21,12 +21,11 @@ import { readPassword, writePassword } from "./secrets";
 import { SimpleSyncSettingTab } from "./settings";
 import { decodeSetup, SETUP_ACTION } from "./setupQR";
 import { SyncState } from "./state";
+import { type Status, StatusBar } from "./status";
 import { DEFAULT_SETTINGS, type InitMode, type SyncSettings } from "./types";
 import { confirm } from "./ui";
 import { listVaultFiles } from "./vaultIO";
 import { VaultWatcher } from "./watchVault";
-
-type Status = "off" | "setup" | "idle" | "syncing" | "error";
 
 export default class SimpleSyncPlugin extends Plugin {
     override settings: SyncSettings = { ...DEFAULT_SETTINGS };
@@ -37,17 +36,14 @@ export default class SimpleSyncPlugin extends Plugin {
     private applier: ChangeApplier | null = null;
     private state: SyncState | null = null;
     private ignore = new IgnoreList(DEFAULT_SETTINGS.ignore);
-    private statusBar: HTMLElement | null = null;
-    private status: Status = "off";
-    private up = 0;
-    private down = 0;
+    private statusBar: StatusBar | null = null;
     private cachedFileCount = 0;
     private watchdog: number | null = null;
 
     override async onload(): Promise<void> {
         await this.loadSettings();
         this.ignore = new IgnoreList(this.settings.ignore);
-        this.statusBar = this.addStatusBarItem();
+        this.statusBar = new StatusBar(this.addStatusBarItem());
         this.addSettingTab(new SimpleSyncSettingTab(this.app, this));
 
         this.registerObsidianProtocolHandler(SETUP_ACTION, (params) => {
@@ -92,6 +88,7 @@ export default class SimpleSyncPlugin extends Plugin {
     }
 
     override async onunload(): Promise<void> {
+        this.statusBar?.dispose();
         await this.teardown();
     }
 
@@ -135,39 +132,24 @@ export default class SimpleSyncPlugin extends Plugin {
 
     // ------------------------------------------------------------------ status
 
-    private setStatus(status: Status): void {
-        this.status = status;
-        this.renderStatus();
+    private get status(): Status {
+        return this.statusBar?.status ?? "off";
     }
 
-    private renderStatus(): void {
-        if (!this.statusBar) return;
-        const labels: Record<Status, string> = {
-            off: "sync off",
-            setup: "sync setup",
-            idle: "sync",
-            syncing: "sync",
-            error: "sync err",
-        };
-        let text = labels[this.status];
-        if (this.status === "idle" || this.status === "syncing") {
-            const parts: string[] = [];
-            if (this.up > 0) parts.push(`↑${this.up}`);
-            if (this.down > 0) parts.push(`↓${this.down}`);
-            if (parts.length > 0) text = `sync ${parts.join(" ")}`;
-        }
-        this.statusBar.setText(text);
+    private setStatus(status: Status): void {
+        this.statusBar?.set(status);
+    }
+
+    /**
+     * Replication chatters, and an error state is a decision the plugin has
+     * already acted on by stopping sync. Live events must not paint over it.
+     */
+    private setLiveStatus(status: Status): void {
+        if (this.status !== "error") this.setStatus(status);
     }
 
     private noteActivity(direction: "up" | "down"): void {
-        if (direction === "up") this.up++;
-        else this.down++;
-        this.renderStatus();
-        window.setTimeout(() => {
-            if (direction === "up") this.up = Math.max(0, this.up - 1);
-            else this.down = Math.max(0, this.down - 1);
-            this.renderStatus();
-        }, 3000);
+        this.statusBar?.noteActivity(direction);
     }
 
     // ------------------------------------------------------------- lifecycle
@@ -249,15 +231,12 @@ export default class SimpleSyncPlugin extends Plugin {
         if (this.replication || !this.local || !this.remote) return;
         this.replication = this.local
             .sync(this.remote, { live: true, retry: true })
-            .on("change", () => {
-                if (this.status !== "error") this.setStatus("syncing");
-            })
-            .on("paused", () => {
-                if (this.status !== "error") this.setStatus("idle");
-            })
-            .on("active", () => {
-                if (this.status !== "error") this.setStatus("syncing");
-            })
+            .on("change", () => this.setLiveStatus("syncing"))
+            // PouchDB pauses both when it has caught up and when it is waiting
+            // out a failed request; the error argument is what tells them apart,
+            // and without it an unreachable server would look up to date.
+            .on("paused", (error: any) => this.setLiveStatus(error ? "offline" : "idle"))
+            .on("active", () => this.setLiveStatus("syncing"))
             .on("denied", (error: any) => {
                 this.log(`replication denied: ${JSON.stringify(error)}`);
             })
@@ -283,6 +262,7 @@ export default class SimpleSyncPlugin extends Plugin {
             await this.remote.info();
         } catch {
             this.log("remote unreachable; restarting replication");
+            this.setLiveStatus("offline");
             this.restartReplication();
         }
     }

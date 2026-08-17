@@ -1,0 +1,65 @@
+/* Status-bar item. Obsidian loads this file automatically; the states come from
+   the data-status attribute set in src/status.ts. */
+
+.simple-sync-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-muted);
+}
+
+.simple-sync-status .simple-sync-status-icon {
+    display: inline-flex;
+    align-items: center;
+}
+
+.simple-sync-status .simple-sync-status-icon svg {
+    width: 14px;
+    height: 14px;
+}
+
+.simple-sync-status .simple-sync-status-text.is-empty {
+    display: none;
+}
+
+.simple-sync-status[data-status="off"] {
+    color: var(--text-faint);
+}
+
+.simple-sync-status[data-status="setup"] {
+    color: var(--text-muted);
+}
+
+.simple-sync-status[data-status="idle"] {
+    color: var(--text-success);
+}
+
+.simple-sync-status[data-status="syncing"],
+.simple-sync-status[data-status="offline"] {
+    color: var(--text-warning);
+}
+
+.simple-sync-status[data-status="error"] {
+    color: var(--text-error);
+}
+
+.simple-sync-status[data-status="syncing"] .simple-sync-status-icon svg {
+    animation: simple-sync-spin 1.2s linear infinite;
+}
+
+@keyframes simple-sync-spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* A spinner in the corner of the screen is exactly the kind of motion people
+   turn off at the system level. */
+@media (prefers-reduced-motion: reduce) {
+    .simple-sync-status[data-status="syncing"] .simple-sync-status-icon svg {
+        animation: none;
+    }
+}

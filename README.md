@@ -23,6 +23,25 @@ state; it is not needed and would be a source of bugs.
 One document per file. Text goes in `data`, binaries go in `_attachments`. No
 chunking.
 
+## Status bar
+
+One item, icon first, with the file counters (`↑2 ↓1`) beside it while files are
+moving. State is carried by colour and icon:
+
+| State | Icon | Colour | Meaning |
+| --- | --- | --- | --- |
+| off | cloud, crossed out | faint | sync is turned off |
+| setup | gear | muted | the vault has not joined yet |
+| idle | check in a circle | green | up to date |
+| syncing | arrows, spinning | yellow | transferring right now |
+| offline | cloud, crossed out | yellow | server unreachable, retrying |
+| error | exclamation in a circle | red | sync stopped, see the notice |
+
+`offline` and `idle` are deliberately different: PouchDB pauses replication both
+when it has caught up and when it is waiting out a failed request, so a plain
+"paused means done" reading would show green while nothing can reach the server.
+The spin honours `prefers-reduced-motion`.
+
 ## Safety model
 
 The first connect is the dangerous moment: a vault pointed at the wrong database,
@@ -152,9 +171,9 @@ origins = app://obsidian.md, capacitor://localhost, http://localhost
 
 ### Desktop
 
-`npm run deploy` builds and copies `main.js` and `manifest.json` into the vault.
-It defaults to `/Volumes/knowledge-base`; override the target with
-`SIMPLE_SYNC_VAULT_PLUGIN_DIR` to deploy to a test vault instead.
+`npm run deploy` builds and copies `main.js`, `manifest.json` and `styles.css`
+into the vault. It defaults to `/Volumes/knowledge-base`; override the target
+with `SIMPLE_SYNC_VAULT_PLUGIN_DIR` to deploy to a test vault instead.
 
 ### iOS and Android, through BRAT
 
@@ -222,8 +241,8 @@ and stages both. Tags carry no `v` prefix (`.npmrc` sets `tag-version-prefix=""`
 
 Pushing the tag runs `.github/workflows/release.yml`: it checks, builds, refuses
 to continue if the tag and `manifest.json` disagree, and publishes a release with
-`main.js` and `manifest.json` attached. `main.js` is a build artifact and stays
-out of git; only the release carries it.
+`main.js`, `manifest.json` and `styles.css` attached. `main.js` is a build
+artifact and stays out of git; only the release carries it.
 
 ### Tests
 

@@ -51,7 +51,9 @@ Conflicts never open a dialog. The loser is written beside the winner as `<name>
 
 Guard C's dry-run modal is the plugin's only modal. Errors go through `Notice`; everything else goes to the status bar or the debug log.
 
-### Secrets
+### Status bar and secrets
+
+`status.ts` owns the status-bar item. It writes a `data-status` attribute and nothing else; every colour and the spin live in `styles.css`, keyed off that attribute, so a new state means one entry in `PRESENTATION` and one CSS rule. `offline` exists because PouchDB emits `paused` both when replication has caught up and when it is retrying a failed request — only the event's error argument separates them, and treating them alike shows a green "up to date" while the server is unreachable. Icon ids are lucide names that predate its rename wave (`check-circle`, not `circle-check`), because an id Obsidian does not know renders as nothing at all.
 
 `secrets.ts` keeps the server password in `app.secretStorage`, which is encrypted by the system keychain. `minAppVersion` is 1.11.4 solely because that is the release the API landed in — lower it and the plugin loses the password on older clients. Availability of the API is not availability of a backend: `setSecret` throws on a platform without one, and `writePassword` returning false is what makes `saveSettings` fall back to writing the password into `data.json`. Never let a failure there drop the password silently. The in-memory `settings.password` stays the working value that `db.ts` and the QR use, and `startIfReady` re-reads secret storage because it may still have been loading when `onload` ran.
 
@@ -60,6 +62,8 @@ Guard C's dry-run modal is the plugin's only modal. Errors go through `Notice`; 
 The bundle runs in Obsidian on desktop **and iOS**. `crypto.subtle` and `TextEncoder` are available; Node APIs are not. PouchDB is assembled from `pouchdb-core` plus explicit adapters in `db.ts` (never the `pouchdb` meta-package) and needs `src/shim.mjs`, injected by esbuild, to survive its CommonJS assumptions. `obsidian`, `electron`, `@codemirror/*` and `@lezer/*` are externals.
 
 `events` in `dependencies` looks unused and is not: `pouchdb-core`, `pouchdb-replication` and `pouchdb-utils` require it for `EventEmitter`, which is what makes the replication handle and the changes feed emit at all. `platform: "browser"` means esbuild does not polyfill Node builtins, so the bare `events` specifier has to resolve from `node_modules`. Removing it fails the build. Same category as `shim.mjs` — do not prune either on the evidence of a grep over `src/`.
+
+`styles.css` is committed, not generated: esbuild only produces `main.js`, and Obsidian loads `styles.css` from the plugin folder on its own. `deploy.mjs` and the release workflow both copy it when it exists, so it needs no wiring, but it does have to stay at the repo root.
 
 `main.js` is a build artifact, gitignored, shipped only as a release asset. Releases are driven by `npm version` (`preversion.mjs` rejects an already-tagged version, `version-bump.mjs` syncs `manifest.json` and `versions.json`) plus `git push --follow-tags`; the workflow refuses to publish when the tag and manifest disagree. Anything about a release that can fail belongs in `preversion.mjs`, which runs before any file is rewritten.
 
