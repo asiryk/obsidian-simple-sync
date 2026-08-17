@@ -2,6 +2,7 @@ import type { App } from "obsidian";
 import type { AnyDB } from "./db";
 import type { IgnoreList } from "./ignore";
 import { buildDoc, buildTombstone, isFileId, pathToId, readLocalFile } from "./mapping";
+import type { SyncState } from "./state";
 import type { FileDoc, InitMode, PlannedAction, ReconcileReport } from "./types";
 import { listVaultFiles, trashFile, writeConflictCopy, writeDocToVault } from "./vaultIO";
 
@@ -54,7 +55,7 @@ export async function planReconcile(ctx: SyncContext, mode: InitMode): Promise<R
 
         if (mode === "push") {
             if (doc && !doc.deleted && doc.hash === local.hash) {
-                actions.push({ kind: "skip", path, reason: "already identical" });
+                actions.push({ kind: "skip", path, reason: "already identical", hash: local.hash });
             } else {
                 actions.push({ kind: "upload", path, reason: "push: local is authoritative" });
             }
@@ -78,7 +79,7 @@ export async function planReconcile(ctx: SyncContext, mode: InitMode): Promise<R
         }
 
         if (doc.hash === local.hash) {
-            actions.push({ kind: "skip", path, reason: "identical" });
+            actions.push({ kind: "skip", path, reason: "identical", hash: local.hash });
         } else if (mode === "pull") {
             actions.push({ kind: "conflict", path, reason: "pull: remote wins, local kept beside it" });
         } else if (local.mtime > doc.mtime) {
@@ -126,23 +127,35 @@ export function describeReport(report: ReconcileReport, mode: InitMode): string 
     return lines.join("\n");
 }
 
-/** Executes a plan. Content is re-read at this point, so it is always current. */
+/**
+ * Executes a plan. Content is re-read at this point, so it is always current.
+ *
+ * Every settled path is recorded in the state map. Reconcile is the moment this
+ * device learns what it holds, and without the record the applier would later
+ * read an untouched-but-stale file as diverged and copy it aside (invariant 4)
+ * on the first remote edit that arrives.
+ */
 export async function applyReconcile(
     ctx: SyncContext,
     mode: InitMode,
     report: ReconcileReport,
+    state: SyncState,
 ): Promise<void> {
     const adapter = ctx.app.vault.adapter;
 
     for (const action of report.actions) {
         try {
-            if (action.kind === "skip") continue;
+            if (action.kind === "skip") {
+                if (action.hash) state.set(action.path, action.hash);
+                continue;
+            }
 
             if (action.kind === "upload") {
                 const local = await readLocalFile(adapter, action.path);
                 if (!local) continue;
                 const existing = await getDoc(ctx.local, action.path);
                 await ctx.local.put(buildDoc(local, existing ?? undefined));
+                state.set(action.path, local.hash);
                 continue;
             }
 
@@ -150,6 +163,7 @@ export async function applyReconcile(
                 const doc = await getDoc(ctx.local, action.path);
                 if (!doc || doc.deleted) continue;
                 await writeDocToVault(ctx.app, ctx.local, doc);
+                state.set(action.path, doc.hash);
                 continue;
             }
 
@@ -166,6 +180,7 @@ export async function applyReconcile(
                     ctx.log(`conflict: kept local copy as ${copy}`);
                 }
                 await writeDocToVault(ctx.app, ctx.local, doc);
+                state.set(action.path, doc.hash);
                 continue;
             }
 
@@ -178,6 +193,7 @@ export async function applyReconcile(
                 } else if (await adapter.exists(action.path)) {
                     await trashFile(ctx.app, action.path);
                 }
+                state.forget(action.path);
             }
         } catch (error: any) {
             ctx.log(`reconcile failed for ${action.path}: ${error?.message ?? error}`);

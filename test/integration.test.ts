@@ -3,6 +3,7 @@ import { IgnoreList } from "../src/ignore";
 import { buildDoc, buildTombstone, pathToId, readLocalFile, sha256 } from "../src/mapping";
 import { applyReconcile, planReconcile, unknownLocalFiles, type SyncContext } from "../src/reconcile";
 import { newSyncId, readMeta, verifyIdentity, writeMeta } from "../src/safety";
+import { SyncState } from "../src/state";
 import { DEFAULT_SETTINGS, type FileDoc } from "../src/types";
 import { bytes, FakeVault, httpDb, memoryDb } from "./fakeVault";
 
@@ -24,6 +25,13 @@ const auth = { username: user ?? "", password: pass ?? "" };
 
 function ctxFor(vault: FakeVault, db: any): SyncContext {
     return { app: vault.app, local: db, ignore: new IgnoreList(".obsidian/**"), log: () => {} };
+}
+
+/** Each device keeps its own baseline of what it last had in sync. */
+async function stateFor(db: any): Promise<SyncState> {
+    const state = new SyncState(db);
+    await state.load();
+    return state;
 }
 
 describe.skipIf(!enabled)("live CouchDB replication", () => {
@@ -60,7 +68,7 @@ describe.skipIf(!enabled)("live CouchDB replication", () => {
         const planA = await planReconcile(ctxA, "push");
         expect(planA.counts.upload).toBe(3);
         expect(planA.counts.download).toBe(0);
-        await applyReconcile(ctxA, "push", planA);
+        await applyReconcile(ctxA, "push", planA, await stateFor(dbA));
 
         const syncId = newSyncId();
         await writeMeta(dbA, "A", syncId);
@@ -78,7 +86,7 @@ describe.skipIf(!enabled)("live CouchDB replication", () => {
 
         const planB = await planReconcile(ctxB, "pull");
         expect(planB.counts.download).toBe(3);
-        await applyReconcile(ctxB, "pull", planB);
+        await applyReconcile(ctxB, "pull", planB, await stateFor(dbB));
 
         expect(vaultB.files.get("Journal/2026-08-16.md")?.text).toBe("# Today\nnotes");
         expect(vaultB.files.get("Reading List.md")?.text).toBe("- a book");
@@ -93,14 +101,14 @@ describe.skipIf(!enabled)("live CouchDB replication", () => {
         vaultA.writeText("Shared.md", "v1");
         vaultA.writeText("Doomed.md", "delete me");
         const ctxA = ctxFor(vaultA, dbA);
-        await applyReconcile(ctxA, "push", await planReconcile(ctxA, "push"));
+        await applyReconcile(ctxA, "push", await planReconcile(ctxA, "push"), await stateFor(dbA));
         await dbA.replicate.to(remote);
 
         const vaultB = new FakeVault("B");
         const dbB = memoryDb();
         const ctxB = ctxFor(vaultB, dbB);
         await dbB.replicate.from(remote);
-        await applyReconcile(ctxB, "merge", await planReconcile(ctxB, "merge"));
+        await applyReconcile(ctxB, "merge", await planReconcile(ctxB, "merge"), await stateFor(dbB));
         expect(vaultB.files.get("Shared.md")?.text).toBe("v1");
 
         // B edits one file and deletes another, then pushes.
@@ -116,7 +124,7 @@ describe.skipIf(!enabled)("live CouchDB replication", () => {
 
         // A pulls and converges.
         await dbA.replicate.from(remote);
-        await applyReconcile(ctxA, "merge", await planReconcile(ctxA, "merge"));
+        await applyReconcile(ctxA, "merge", await planReconcile(ctxA, "merge"), await stateFor(dbA));
 
         expect(vaultA.files.get("Shared.md")?.text).toBe("v2 from B");
         expect(vaultA.files.has("Doomed.md")).toBe(false);
@@ -129,7 +137,7 @@ describe.skipIf(!enabled)("live CouchDB replication", () => {
         const payload = new Uint8Array(4096).map((_, i) => i % 251);
         vault.writeBin("Assets/big.pdf", payload.buffer);
         const ctx = ctxFor(vault, db);
-        await applyReconcile(ctx, "push", await planReconcile(ctx, "push"));
+        await applyReconcile(ctx, "push", await planReconcile(ctx, "push"), await stateFor(db));
         await db.replicate.to(remote);
 
         const fresh = memoryDb();

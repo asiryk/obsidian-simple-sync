@@ -8,6 +8,13 @@ import { fetchAttachment, trashFile, writeConflictCopy, writeDocToVault } from "
 /** Guard D, streaming half: destructive operations counted over a rolling window. */
 const BREAKER_WINDOW_MS = 15000;
 
+/**
+ * How far back through a document's revisions to look for the content sitting on
+ * disk. Bounded because it costs one read per revision, and a device more than a
+ * few edits behind is better served by the conflict copy anyway.
+ */
+const ANCESTOR_SCAN_LIMIT = 10;
+
 export interface ApplyHooks {
     onActivity: (direction: "down") => void;
     onBreakerTripped: (message: string) => void;
@@ -154,7 +161,7 @@ export class ChangeApplier {
 
         if (diskHash !== null) {
             const known = this.state.get(path);
-            if (known !== diskHash) {
+            if (known !== diskHash && !(await this.matchesEarlierRevision(doc, diskHash))) {
                 // Invariant 4: the file on disk holds content we never synced, so
                 // it is preserved rather than overwritten.
                 if (!this.allowDestructive()) return;
@@ -171,6 +178,42 @@ export class ChangeApplier {
         await writeDocToVault(this.ctx.app, this.ctx.local, doc);
         this.state.set(path, doc.hash);
         this.hooks.onActivity("down");
+    }
+
+    /**
+     * Second opinion for invariant 4, used when the state map has no hash for a
+     * path. Content equal to an earlier revision of the same document was synced
+     * here at some point, so overwriting it loses nothing and no copy is needed.
+     *
+     * This covers the devices the state map cannot speak for: one that joined
+     * before the map was recorded, or one whose local database was rebuilt.
+     */
+    private async matchesEarlierRevision(doc: FileDoc, diskHash: string): Promise<boolean> {
+        let history: any;
+        try {
+            const options = doc._rev ? { rev: doc._rev, revs: true } : { revs: true };
+            history = await this.ctx.local.get(doc._id, options as any);
+        } catch {
+            return false;
+        }
+        const start: number | undefined = history?._revisions?.start;
+        const ids: string[] | undefined = history?._revisions?.ids;
+        if (typeof start !== "number" || !ids) return false;
+
+        // ids[0] is the revision we already compared, so start one back.
+        const limit = Math.min(ids.length, ANCESTOR_SCAN_LIMIT + 1);
+        for (let i = 1; i < limit; i++) {
+            try {
+                const older = (await this.ctx.local.get(doc._id, {
+                    rev: `${start - i}-${ids[i]}`,
+                })) as FileDoc;
+                if (older.hash === diskHash) return true;
+            } catch {
+                // Compacted away. Everything older is gone too, so stop here.
+                return false;
+            }
+        }
+        return false;
     }
 
     /**

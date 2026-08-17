@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ChangeApplier } from "../src/applyChanges";
 import { IgnoreList } from "../src/ignore";
 import { buildDoc, buildTombstone, pathToId, readLocalFile, sha256 } from "../src/mapping";
-import type { SyncContext } from "../src/reconcile";
+import { applyReconcile, planReconcile, type SyncContext } from "../src/reconcile";
 import { SyncState } from "../src/state";
 import type { FileDoc } from "../src/types";
 import { FakeVault, memoryDb } from "./fakeVault";
@@ -114,10 +114,12 @@ describe("applying incoming changes", () => {
     });
 
     it("keeps a conflict copy when the local file diverged", async () => {
-        vault.writeText("Note.md", "local only");
+        vault.writeText("Note.md", "v1");
         const doc = await seedDocFromDisk("Note.md");
         await startFromNow();
-        // No synced hash recorded, so the local content is unaccounted for.
+        // Edited here and never uploaded: this content is in no revision, and no
+        // synced hash was recorded for it either.
+        vault.writeText("Note.md", "local only", 9000);
         state.forget("Note.md");
 
         await db.put({ ...doc, data: "remote", hash: await sha256("remote"), mtime: 9000 });
@@ -126,6 +128,25 @@ describe("applying incoming changes", () => {
         const conflict = [...vault.files.keys()].find((p) => p.includes(".conflict-"));
         expect(conflict).toBeDefined();
         expect(vault.files.get(conflict as string)?.text).toBe("local only");
+    });
+
+    it("overwrites a stale file whose content is an earlier revision, with no state map", async () => {
+        vault.writeText("Note.md", "v1");
+        const doc = await seedDocFromDisk("Note.md");
+        // A device that joined before the baseline was recorded, or whose local
+        // database was rebuilt: the file is untouched, merely several edits behind.
+        state.forget("Note.md");
+        const before = (await db.info()).update_seq;
+
+        const v2 = await db.put({ ...doc, data: "v2", hash: await sha256("v2"), mtime: 5000 });
+        await db.put({ ...doc, _rev: v2.rev, data: "v3", hash: await sha256("v3"), mtime: 9000 });
+
+        state.setSeq(before);
+        applier.start();
+        await waitFor(() => vault.files.get("Note.md")?.text === "v3");
+
+        expect([...vault.files.keys()].filter((p) => p.includes(".conflict-"))).toHaveLength(0);
+        expect(state.get("Note.md")).toBe(await sha256("v3"));
     });
 
     it("ignores documents whose path is on the ignore list", async () => {
@@ -142,6 +163,27 @@ describe("applying incoming changes", () => {
         });
         await new Promise((resolve) => setTimeout(resolve, 150));
         expect(vault.files.has(".obsidian/workspace.json")).toBe(false);
+    });
+});
+
+describe("a device that joined through reconcile", () => {
+    /**
+     * The bug this guards: reconcile used to leave the state map empty, so the
+     * first remote edit to any file the device already held looked like local
+     * divergence and spawned a conflict copy nobody had edited.
+     */
+    it("takes a later remote edit without making a conflict copy", async () => {
+        vault.writeText("Joined.md", "v1");
+        const doc = await seedDocFromDisk("Joined.md");
+        const report = await planReconcile(ctx, "merge");
+        expect(report.actions.find((a) => a.path === "Joined.md")?.kind).toBe("skip");
+        await applyReconcile(ctx, "merge", report, state);
+
+        await startFromNow();
+        await db.put({ ...doc, data: "v2", hash: await sha256("v2"), mtime: 9000 });
+        await waitFor(() => vault.files.get("Joined.md")?.text === "v2");
+
+        expect([...vault.files.keys()].filter((p) => p.includes(".conflict-"))).toHaveLength(0);
     });
 });
 

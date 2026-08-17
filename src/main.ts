@@ -449,7 +449,7 @@ export default class SimpleSyncPlugin extends Plugin {
                 return;
             }
 
-            await applyReconcile(ctx, mode, report);
+            await applyReconcile(ctx, mode, report, this.state as SyncState);
 
             const syncId = mode === "push" || !meta ? newSyncId() : meta.syncId;
             if (mode === "push" || !meta) {
@@ -508,7 +508,8 @@ export default class SimpleSyncPlugin extends Plugin {
                 warning,
             );
             if (!accepted) return;
-            await applyReconcile(ctx, "merge", report);
+            await applyReconcile(ctx, "merge", report, this.state as SyncState);
+            await this.state?.flush();
             new Notice(
                 `Simple Sync: reconciled. ${report.counts.upload} up, ` +
                     `${report.counts.download} down, ${report.counts.conflict} conflicts.`,

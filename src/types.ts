@@ -73,6 +73,11 @@ export interface PlannedAction {
     kind: "upload" | "download" | "delete-local" | "conflict" | "skip";
     path: string;
     reason: string;
+    /**
+     * For "skip" only: the hash both sides already agree on. Carried so applying
+     * the plan can record the synced baseline without hashing the vault twice.
+     */
+    hash?: string;
 }
 
 export interface ReconcileReport {

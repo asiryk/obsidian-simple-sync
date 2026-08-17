@@ -1,15 +1,17 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { IgnoreList } from "../src/ignore";
 import { buildDoc, buildTombstone, pathToId, readLocalFile, sha256 } from "../src/mapping";
 import { applyReconcile, planReconcile, unknownLocalFiles, type SyncContext } from "../src/reconcile";
+import { SyncState } from "../src/state";
 import type { FileDoc, PlannedAction } from "../src/types";
 import { bytes, FakeVault, memoryDb } from "./fakeVault";
 
 let vault: FakeVault;
 let db: any;
 let ctx: SyncContext;
+let state: SyncState;
 
-beforeEach(() => {
+beforeEach(async () => {
     vault = new FakeVault();
     db = memoryDb();
     ctx = {
@@ -18,6 +20,12 @@ beforeEach(() => {
         ignore: new IgnoreList(".obsidian/**\n.git/**"),
         log: () => {},
     };
+    state = new SyncState(db);
+    await state.load();
+});
+
+afterEach(() => {
+    state.dispose();
 });
 
 /** Puts a document into the database describing a file's current disk content. */
@@ -97,7 +105,7 @@ describe("invariant 1: a file the database has never seen is never deleted", () 
         expect(kindOf(report.actions, "Mine.md")).toBe("upload");
         expect(report.actions.some((a) => a.kind === "delete-local" && a.path === "Mine.md")).toBe(false);
 
-        await applyReconcile(ctx, "merge", report);
+        await applyReconcile(ctx, "merge", report, state);
         expect(vault.files.has("Mine.md")).toBe(true);
         expect(vault.trashed).toHaveLength(0);
     });
@@ -120,7 +128,7 @@ describe("invariant 2: deletes only apply to the copy that was deleted", () => {
         const report = await planReconcile(ctx, "merge");
         expect(kindOf(report.actions, "Gone.md")).toBe("delete-local");
 
-        await applyReconcile(ctx, "merge", report);
+        await applyReconcile(ctx, "merge", report, state);
         expect(vault.trashed).toContain("Gone.md");
     });
 
@@ -133,7 +141,7 @@ describe("invariant 2: deletes only apply to the copy that was deleted", () => {
         const report = await planReconcile(ctx, "merge");
         expect(kindOf(report.actions, "Gone.md")).toBe("upload");
 
-        await applyReconcile(ctx, "merge", report);
+        await applyReconcile(ctx, "merge", report, state);
         expect(vault.files.has("Gone.md")).toBe(true);
         expect(vault.trashed).toHaveLength(0);
         const revived = (await db.get(pathToId("Gone.md"))) as FileDoc;
@@ -162,7 +170,7 @@ describe("push mode", () => {
         expect(report.counts.conflict).toBe(0);
 
         const before = new Map(vault.files);
-        await applyReconcile(ctx, "push", report);
+        await applyReconcile(ctx, "push", report, state);
 
         expect([...vault.files.keys()].sort()).toEqual([...before.keys()].sort());
         expect(vault.trashed).toHaveLength(0);
@@ -186,7 +194,7 @@ describe("pull mode", () => {
         const report = await planReconcile(ctx, "pull");
         expect(kindOf(report.actions, "Note.md")).toBe("conflict");
 
-        await applyReconcile(ctx, "pull", report);
+        await applyReconcile(ctx, "pull", report, state);
         expect(vault.files.get("Note.md")?.text).toBe("remote version");
         const conflictCopy = [...vault.files.keys()].find((p) => p.includes(".conflict-"));
         expect(conflictCopy).toBeDefined();
@@ -194,17 +202,56 @@ describe("pull mode", () => {
     });
 });
 
+describe("the baseline reconcile leaves behind", () => {
+    it("records a hash for files it left untouched", async () => {
+        vault.writeText("Same.md", "hello");
+        await seedDocFromDisk("Same.md");
+
+        const report = await planReconcile(ctx, "merge");
+        expect(kindOf(report.actions, "Same.md")).toBe("skip");
+
+        await applyReconcile(ctx, "merge", report, state);
+        expect(state.get("Same.md")).toBe(await sha256("hello"));
+    });
+
+    it("records a hash for uploads, downloads and conflicts alike", async () => {
+        vault.writeText("Uploaded.md", "mine");
+        vault.writeText("Downloaded.md", "theirs");
+        await seedDocFromDisk("Downloaded.md");
+        vault.files.delete("Downloaded.md");
+        vault.writeText("Fought.md", "local", 1000);
+        const doc = await seedDocFromDisk("Fought.md");
+        await db.put({ ...doc, data: "remote", hash: await sha256("remote"), mtime: 9000 });
+
+        await applyReconcile(ctx, "merge", await planReconcile(ctx, "merge"), state);
+
+        expect(state.get("Uploaded.md")).toBe(await sha256("mine"));
+        expect(state.get("Downloaded.md")).toBe(await sha256("theirs"));
+        expect(state.get("Fought.md")).toBe(await sha256("remote"));
+    });
+
+    it("forgets a path it removed from the vault", async () => {
+        vault.writeText("Gone.md", "content");
+        const doc = await seedDocFromDisk("Gone.md");
+        state.set("Gone.md", doc.hash);
+        await db.put(buildTombstone(doc, "Gone.md"));
+
+        await applyReconcile(ctx, "merge", await planReconcile(ctx, "merge"), state);
+        expect(state.get("Gone.md")).toBeUndefined();
+    });
+});
+
 describe("binary files", () => {
     it("round-trips through an attachment", async () => {
         vault.writeBin("Assets/pic.avif", bytes(1, 2, 3, 4, 5));
         const uploadPlan = await planReconcile(ctx, "merge");
-        await applyReconcile(ctx, "merge", uploadPlan);
+        await applyReconcile(ctx, "merge", uploadPlan, state);
 
         vault.files.delete("Assets/pic.avif");
         const downloadPlan = await planReconcile(ctx, "merge");
         expect(kindOf(downloadPlan.actions, "Assets/pic.avif")).toBe("download");
 
-        await applyReconcile(ctx, "merge", downloadPlan);
+        await applyReconcile(ctx, "merge", downloadPlan, state);
         const restored = vault.files.get("Assets/pic.avif");
         expect(new Uint8Array(restored?.binary as ArrayBuffer)).toEqual(new Uint8Array([1, 2, 3, 4, 5]));
     });
