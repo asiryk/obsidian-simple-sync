@@ -36,7 +36,7 @@ export class SimpleSyncSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName("Password")
-            .setDesc("Held in Obsidian's secret storage, encrypted by the system keychain.")
+            .setDesc("Username and password are kept in Obsidian's secret storage, encrypted by the system.")
             .addText((text) => {
                 text.inputEl.type = "password";
                 text.setValue(settings.password).onChange(async (value) => {

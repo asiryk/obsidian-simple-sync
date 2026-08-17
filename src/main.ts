@@ -17,7 +17,7 @@ import {
     verifyIdentity,
     writeMeta,
 } from "./safety";
-import { readPassword, writePassword } from "./secrets";
+import { PASSWORD_SECRET, readSecret, USERNAME_SECRET, writeSecret } from "./secrets";
 import { SimpleSyncSettingTab } from "./settings";
 import { decodeSetup, SETUP_ACTION } from "./setupQR";
 import { SyncState } from "./state";
@@ -97,21 +97,33 @@ export default class SimpleSyncPlugin extends Plugin {
     async loadSettings(): Promise<void> {
         const data = (await this.loadData()) as Partial<SyncSettings> | null;
         this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
-        const stored = readPassword(this.app);
-        if (stored !== null) this.settings.password = stored;
-        // An install from before this moved the password into secret storage
-        // left it in data.json. Rewriting it now takes it out of there.
+        this.readCredentials();
+        // An install from before this moved the credentials into secret storage
+        // left them in data.json. Rewriting now takes them out of there.
         // TODO: drop this line and the `data` binding one release after this
         // one. Every device will have loaded this version by then, so no
-        // data.json still holds a password and readPassword is the only source.
-        if (data?.password) await this.saveSettings();
+        // data.json still holds credentials and secret storage is the only
+        // source.
+        if (data?.username || data?.password) await this.saveSettings();
     }
 
-    /** Keeps the password out of `data.json` whenever secret storage will take it. */
+    /** Keeps the credentials out of `data.json` whenever secret storage takes them. */
     async saveSettings(): Promise<void> {
-        const stored = writePassword(this.app, this.settings.password);
-        const { password, ...withoutPassword } = this.settings;
-        await this.saveData(stored ? withoutPassword : this.settings);
+        // Each field is dropped only on its own successful write, so a platform
+        // without a secure backend keeps them in the settings file rather than
+        // losing them.
+        const persisted: Partial<SyncSettings> = { ...this.settings };
+        if (writeSecret(this.app, USERNAME_SECRET, this.settings.username)) delete persisted.username;
+        if (writeSecret(this.app, PASSWORD_SECRET, this.settings.password)) delete persisted.password;
+        await this.saveData(persisted);
+    }
+
+    /** Secret storage wins, so a half-migrated vault resolves to what it holds. */
+    private readCredentials(): void {
+        const username = readSecret(this.app, USERNAME_SECRET);
+        if (username !== null) this.settings.username = username;
+        const password = readSecret(this.app, PASSWORD_SECRET);
+        if (password !== null) this.settings.password = password;
     }
 
     reloadIgnore(): void {
@@ -177,9 +189,8 @@ export default class SimpleSyncPlugin extends Plugin {
             await this.openLocalDb();
             // Secret storage fills in during app startup, which can be after
             // onload; re-read it here so the first connection is not made with
-            // an empty password.
-            const stored = readPassword(this.app);
-            if (stored !== null) this.settings.password = stored;
+            // empty credentials.
+            this.readCredentials();
             this.remote = openRemote(this.settings);
 
             const verdict = await verifyIdentity(this.remote, this.settings);

@@ -202,13 +202,18 @@ or every request fails before it reaches CouchDB.
 
 The QR contains the server password unencrypted. Do not screenshot it.
 
-The password itself is kept in Obsidian's secret storage (`app.secretStorage`),
-which encrypts it with the system keychain, and is left out of the plugin's
-`data.json` entirely. A password left in `data.json` by an earlier version is
-moved across on the next load. `minAppVersion` is 1.11.4 for this reason: that is
-the release the API landed in. A platform with no secure backend underneath it
-still falls back to `data.json`, because the alternative is not keeping the
-password at all.
+Username and password are kept in Obsidian's secret storage
+(`app.secretStorage`), which encrypts them with the system keychain, and are left
+out of the plugin's `data.json` entirely — as two entries, `simple-sync-username`
+and `simple-sync-password`, so that what you see in Obsidian's own settings is a
+username and a password rather than a blob. Credentials left in `data.json` by an
+earlier version are moved across on the next load. `minAppVersion` is 1.11.4 for
+this reason: that is the release the API landed in. A platform with no secure
+backend underneath it still falls back to `data.json`, because the alternative is
+not keeping the credentials at all.
+
+The server URL and database name stay in `data.json`. They are deployment
+config — the same values as in the CORS list above — not secrets.
 
 ## Development
 
