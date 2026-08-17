@@ -1,7 +1,7 @@
 {
     "id": "simple-sync",
     "name": "Simple Sync",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "minAppVersion": "1.11.4",
     "description": "Syncs the vault with a CouchDB server. No status noise, no wizard.",
     "author": "asiryk",
